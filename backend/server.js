@@ -22,6 +22,7 @@ app.use(cors({
   origin: [
     'http://localhost:8081',
     'http://localhost:3000',
+    'https://e-ballot-system-frontned.onrender.com'
   ],
   credentials: true // needed if using cookies or sessions
 }));
