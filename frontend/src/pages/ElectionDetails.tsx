@@ -11,10 +11,11 @@ import {
   DialogTitle 
 } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
-import { ArrowLeft, Calendar, Clock, Info, User, Loader2, Vote } from "lucide-react";
+import { ArrowLeft, Calendar, Clock, Info, User, Loader2, Vote, Edit, Trash2 } from "lucide-react";
 import { electionService, authService } from "@/services/api";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 type Candidate = {
   _id: string;
@@ -39,6 +40,7 @@ const ElectionDetails = () => {
   const [election, setElection] = useState<Election | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<string | null>(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,11 +48,13 @@ const ElectionDetails = () => {
   const [results, setResults] = useState<any>(null);
   const [isLoadingResults, setIsLoadingResults] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    // Check authentication status
+    // Check authentication status and admin role
     const user = authService.getCurrentUser();
     setIsAuthenticated(!!user);
+    setIsAdmin(user?.role === 'admin');
 
     const fetchElection = async () => {
       if (!id) {
@@ -74,7 +78,7 @@ const ElectionDetails = () => {
           }
         }
 
-        // If election is completed, fetch results
+        // Always fetch results for completed elections
         if (data.status === "completed") {
           setIsLoadingResults(true);
           try {
@@ -82,12 +86,22 @@ const ElectionDetails = () => {
             setResults(resultsData);
           } catch (err) {
             console.error("Failed to fetch results:", err);
+            toast({
+              title: "Error",
+              description: "Failed to load election results",
+              variant: "destructive",
+            });
           } finally {
             setIsLoadingResults(false);
           }
         }
       } catch (error: any) {
         setError(error.message || "Failed to load election details");
+        toast({
+          title: "Error",
+          description: error.message || "Failed to load election details",
+          variant: "destructive",
+        });
       } finally {
         setIsLoading(false);
       }
@@ -299,163 +313,182 @@ const ElectionDetails = () => {
   
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto px-4 py-8 max-w-4xl">
-        <Button 
-          variant="ghost" 
-          className="mb-6" 
-          onClick={() => navigate("/dashboard")}
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to dashboard
-        </Button>
-        
-        <main className="container mx-auto px-4 md:px-6 py-8">
-          {election && (
-            <div className="max-w-4xl mx-auto">
-              <Card>
-                <CardHeader>
-                  <div className="flex justify-between items-start gap-2">
-                    <div>
-                      <CardTitle className="text-2xl">{election.title}</CardTitle>
-                      <CardDescription className="mt-2">
-                        {formatDate(election.startDate)} - {formatDate(election.endDate)}
-                      </CardDescription>
-                    </div>
-                    <Badge variant={election.status === "active" ? "default" : "secondary"}>
-                      {election.status.charAt(0).toUpperCase() + election.status.slice(1)}
-                    </Badge>
-                  </div>
-                </CardHeader>
+      <div className="container mx-auto px-4 py-8">
+        {isLoading ? (
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading election details...</p>
+          </div>
+        ) : error ? (
+          <div className="text-center text-red-600">
+            <p>{error}</p>
+            <Button onClick={() => navigate(-1)} className="mt-4">
+              Go Back
+            </Button>
+          </div>
+        ) : election ? (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <Button variant="ghost" onClick={() => navigate(-1)}>
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Back
+              </Button>
+              {isAdmin && election.status === "upcoming" && (
+                <Button variant="destructive" onClick={() => setShowDeleteDialog(true)}>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </Button>
+              )}
+            </div>
 
-                <CardContent>
-                  <div className="p-6">
-                    <h2 className="text-xl font-semibold mb-4">About this election</h2>
-                    <p className="text-gray-700 mb-6">{election.description}</p>
-                    
-                    {election.status === "completed" ? (
-                      isLoadingResults ? (
-                        <div className="text-center py-8">
-                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-                          <p className="mt-4 text-gray-600">Loading results...</p>
-                        </div>
-                      ) : (
-                        renderResults()
-                      )
-                    ) : election.status === "active" ? (
+            <Card>
+              <CardHeader>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <CardTitle className="text-2xl">{election.title}</CardTitle>
+                    <CardDescription className="mt-2">
+                      {election.description}
+                    </CardDescription>
+                  </div>
+                  <Badge className={cn(
+                    election.status === "active" && "bg-green-500",
+                    election.status === "upcoming" && "bg-blue-500",
+                    election.status === "completed" && "bg-gray-500"
+                  )}>
+                    {election.status.charAt(0).toUpperCase() + election.status.slice(1)}
+                  </Badge>
+                </div>
+              </CardHeader>
+
+              <CardContent>
+                <div className="space-y-6">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500">Start Date</h3>
+                      <p className="mt-1">{formatDate(election.startDate)}</p>
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500">End Date</h3>
+                      <p className="mt-1">{formatDate(election.endDate)}</p>
+                    </div>
+                  </div>
+
+                  {election.status === "completed" ? (
+                    isLoadingResults ? (
+                      <div className="text-center py-8">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                        <p className="mt-4 text-gray-600">Loading results...</p>
+                      </div>
+                    ) : (
+                      renderResults()
+                    )
+                  ) : election.status === "active" ? (
+                    isAuthenticated ? (
                       hasVoted ? (
-                        <div className="text-center py-8">
-                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-                            <div className="flex items-center justify-center mb-4">
-                              <div className="bg-blue-100 rounded-full p-3">
-                                <Vote className="h-6 w-6 text-blue-600" />
-                              </div>
-                            </div>
-                            <h3 className="text-lg font-semibold text-blue-800 mb-2">Your Vote Has Been Recorded</h3>
-                            <p className="text-blue-700">
-                              You have already cast your vote in this election. Thank you for participating!
-                            </p>
-                          </div>
+                        <div className="bg-green-50 border border-green-200 rounded-md p-4">
+                          <p className="text-green-800">
+                            You have already voted in this election. Results will be available once the election is completed.
+                          </p>
                         </div>
                       ) : (
                         <div>
-                          <h2 className="text-xl font-semibold mb-4">Cast Your Vote</h2>
-                          <p className="text-gray-700 mb-6">
-                            Select one candidate from the list below. Your vote is confidential and secure.
-                          </p>
-                          {isAuthenticated ? (
-                            <div className="space-y-4">
-                              <RadioGroup value={selectedCandidate || ""} onValueChange={setSelectedCandidate} className="space-y-4">
-                                {election.candidates.map(candidate => (
-                                  <div key={candidate._id} className="flex items-start space-x-2 rounded-md border p-4 hover:bg-gray-50">
-                                    <RadioGroupItem value={candidate._id} id={candidate._id} />
-                                    <div className="grid gap-1.5 leading-none">
-                                      <label
-                                        htmlFor={candidate._id}
-                                        className="text-lg font-medium cursor-pointer flex items-center"
-                                      >
-                                        {candidate.name}
-                                        <span className="ml-2 text-sm text-blue-600 font-normal">
-                                          {candidate.party}
-                                        </span>
-                                      </label>
-                                      <p className="text-sm text-gray-500">
-                                        {candidate.bio}
-                                      </p>
-                                    </div>
-                                  </div>
-                                ))}
-                              </RadioGroup>
-                              <Button
-                                className="w-full mt-4"
-                                disabled={!selectedCandidate || isSubmitting}
-                                onClick={handleVoteClick}
+                          <h3 className="text-lg font-semibold mb-4">Cast Your Vote</h3>
+                          <div className="space-y-4">
+                            {election.candidates.map((candidate) => (
+                              <div
+                                key={candidate._id}
+                                className={`p-4 rounded-lg border cursor-pointer transition-colors ${
+                                  selectedCandidate === candidate._id
+                                    ? "border-blue-500 bg-blue-50"
+                                    : "border-gray-200 hover:border-blue-200"
+                                }`}
+                                onClick={() => setSelectedCandidate(candidate._id)}
                               >
-                                {isSubmitting ? "Submitting..." : "Cast Vote"}
-                              </Button>
-                            </div>
-                          ) : (
-                            <div className="text-center py-8">
-                              <p className="text-gray-600 mb-4">Please log in to cast your vote</p>
-                              <Button onClick={() => navigate("/login", { state: { message: "Please log in to cast your vote" } })}>
-                                Log In to Vote
-                              </Button>
-                            </div>
-                          )}
+                                <div className="flex items-start justify-between">
+                                  <div>
+                                    <h4 className="font-medium">{candidate.name}</h4>
+                                    <p className="text-sm text-gray-600">
+                                      {candidate.party}
+                                    </p>
+                                  </div>
+                                  <div
+                                    className={`w-4 h-4 rounded-full border ${
+                                      selectedCandidate === candidate._id
+                                        ? "border-4 border-blue-500"
+                                        : "border-gray-300"
+                                    }`}
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <Button
+                            className="w-full mt-6"
+                            disabled={!selectedCandidate || isSubmitting}
+                            onClick={() => setShowConfirmDialog(true)}
+                          >
+                            {isSubmitting ? "Submitting..." : "Submit Vote"}
+                          </Button>
                         </div>
                       )
-                    ) : null}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          )}
-        </main>
-        
-        {!isActive && (
-          <div className="bg-white rounded-lg shadow-md overflow-hidden">
-            <div className="p-6">
-              <h2 className="text-xl font-semibold mb-4">Candidates</h2>
-              <div className="space-y-6">
-                {election.candidates.map(candidate => (
-                  <div key={candidate._id} className="border-b pb-4 last:border-b-0 last:pb-0">
-                    <div className="flex items-center mb-1">
-                      <User className="h-5 w-5 mr-2 text-gray-400" />
-                      <h3 className="font-medium">{candidate.name}</h3>
-                      <span className="ml-2 text-sm text-blue-600">
-                        {candidate.party}
-                      </span>
+                    ) : (
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+                        <p className="text-yellow-800">
+                          Please log in to cast your vote in this election.
+                        </p>
+                        <Button
+                          variant="outline"
+                          className="mt-4"
+                          onClick={() => navigate("/login")}
+                        >
+                          Log In
+                        </Button>
+                      </div>
+                    )
+                  ) : (
+                    <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+                      <p className="text-blue-800">
+                        This election has not started yet. Please check back on{" "}
+                        {formatDate(election.startDate)}.
+                      </p>
                     </div>
-                    <p className="text-gray-600 text-sm pl-7">{candidate.bio}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
           </div>
-        )}
+        ) : null}
       </div>
-      
+
+      {/* Confirmation Dialog */}
       <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Confirm Your Vote</DialogTitle>
             <DialogDescription>
-              Are you sure you want to vote for {election.candidates.find(c => c._id === selectedCandidate)?.name}?
-              This action cannot be undone.
+              Are you sure you want to cast your vote? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
-          
-          {selectedCandidate && (
-            <div className="py-4">
-              <p className="font-medium">Selected Candidate:</p>
-              <p className="mt-1">
-                {election.candidates.find(c => c._id === selectedCandidate)?.name} 
-                <span className="text-sm text-gray-600 ml-2">
-                  ({election.candidates.find(c => c._id === selectedCandidate)?.party})
-                </span>
-              </p>
-            </div>
-          )}
-          
+          <div className="mt-4">
+            {selectedCandidate && (
+              <div className="p-4 bg-gray-50 rounded-md">
+                <p className="font-medium">
+                  {
+                    election?.candidates.find(
+                      (c) => c._id === selectedCandidate
+                    )?.name
+                  }
+                </p>
+                <p className="text-sm text-gray-600">
+                  {
+                    election?.candidates.find(
+                      (c) => c._id === selectedCandidate
+                    )?.party
+                  }
+                </p>
+              </div>
+            )}
+          </div>
           <DialogFooter>
             <Button
               variant="outline"
@@ -468,14 +501,7 @@ const ElectionDetails = () => {
               onClick={handleVoteSubmit}
               disabled={isSubmitting}
             >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Submitting...
-                </>
-              ) : (
-                "Confirm Vote"
-              )}
+              {isSubmitting ? "Submitting..." : "Confirm Vote"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -20,6 +20,10 @@ import { authService } from "@/services/api";
 const formSchema = z.object({
   fullName: z.string().min(3, "Full name must be at least 3 characters"),
   email: z.string().email("Invalid email address"),
+  age: z.string()
+    .refine((val) => !isNaN(parseInt(val)), "Age must be a number")
+    .refine((val) => parseInt(val) >= 18, "You must be at least 18 years old to register")
+    .refine((val) => parseInt(val) <= 120, "Please enter a valid age"),
   voterID: z.string().min(6, "Voter ID must be at least 6 characters"),
   password: z.string().min(8, "Password must be at least 8 characters"),
   confirmPassword: z.string(),
@@ -39,6 +43,7 @@ const Register = () => {
     defaultValues: {
       fullName: "",
       email: "",
+      age: "",
       voterID: "",
       password: "",
       confirmPassword: "",
@@ -51,7 +56,12 @@ const Register = () => {
     try {
       // Remove confirmPassword before sending to API
       const { confirmPassword, ...registrationData } = data;
-      await authService.register(registrationData);
+      // Convert age to number before sending
+      const formattedData = {
+        ...registrationData,
+        age: parseInt(registrationData.age)
+      };
+      await authService.register(formattedData);
       
       toast({
         title: "Registration successful!",
@@ -112,6 +122,26 @@ const Register = () => {
                   <FormLabel>Email Address</FormLabel>
                   <FormControl>
                     <Input placeholder="john.doe@example.com" type="email" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            
+            <FormField
+              control={form.control}
+              name="age"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Age</FormLabel>
+                  <FormControl>
+                    <Input 
+                      type="number" 
+                      placeholder="Enter your age" 
+                      min="18" 
+                      max="120"
+                      {...field} 
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

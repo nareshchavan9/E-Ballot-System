@@ -100,7 +100,8 @@ router.post('/', authenticateToken, isAdmin, async (req, res) => {
       title,
       startDate,
       endDate,
-      candidatesCount: candidates?.length
+      candidatesCount: candidates?.length,
+      adminId: req.user.id
     });
 
     // Validate required fields
@@ -112,8 +113,8 @@ router.post('/', authenticateToken, isAdmin, async (req, res) => {
     }
 
     // Validate candidates
-    if (!Array.isArray(candidates) || candidates.length === 0) {
-      return res.status(400).json({ message: 'At least one candidate is required' });
+    if (!Array.isArray(candidates) || candidates.length < 2) {
+      return res.status(400).json({ message: 'At least two candidates are required' });
     }
 
     // Validate each candidate
@@ -161,20 +162,18 @@ router.post('/', authenticateToken, isAdmin, async (req, res) => {
       })),
       createdBy: req.user.id
     });
-    
-    // Save election
+
     await election.save();
     
     console.log('Election created successfully:', {
-      electionId: election._id,
+      id: election._id,
       title: election.title,
-      status: election.status,
-      candidatesCount: election.candidates.length
+      status: election.status
     });
 
     res.status(201).json(election);
   } catch (error) {
-    console.error('Create election error:', error);
+    console.error('Error creating election:', error);
     
     if (error.name === 'ValidationError') {
       return res.status(400).json({ 
@@ -184,7 +183,7 @@ router.post('/', authenticateToken, isAdmin, async (req, res) => {
     }
     
     res.status(500).json({ 
-      message: 'Server error creating election',
+      message: 'Server error while creating election',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
@@ -251,37 +250,25 @@ router.post('/:id/vote', authenticateToken, async (req, res) => {
     if (existingVote) {
       return res.status(400).json({ message: 'You have already voted in this election' });
     }
-    
-    // Create audit hash for verification
-    const auditData = `${req.user.id}-${electionId}-${req.ip}-${Date.now()}`;
-    const auditHash = crypto.createHash('sha256').update(auditData).digest('hex');
-    
-    // Record vote
+
+    // Create and save the vote
     const vote = new Vote({
       election: electionId,
-      voter: req.user.id,
       candidate: candidateId,
-      auditHash
+      voter: req.user.id
     });
     
     await vote.save();
+    
     console.log('Vote recorded successfully:', {
-      voteId: vote._id,
       electionId,
       candidateId,
-      candidateName: candidate.name
+      userId: req.user.id
     });
-    
-    res.status(201).json({ 
-      message: 'Vote successfully recorded', 
-      voteId: vote._id 
-    });
+
+    res.status(201).json({ message: 'Vote recorded successfully' });
   } catch (error) {
-    console.error('Vote error:', error);
-    
-    if (error.code === 11000) { // Duplicate key error
-      return res.status(400).json({ message: 'You have already voted in this election' });
-    }
+    console.error('Vote submission error:', error);
     
     if (error instanceof mongoose.Error.CastError) {
       return res.status(400).json({ message: 'Invalid ID format' });
@@ -289,112 +276,6 @@ router.post('/:id/vote', authenticateToken, async (req, res) => {
     
     res.status(500).json({ 
       message: 'Server error recording vote',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
-// Get election results (only for completed elections)
-router.get('/:id/results', async (req, res) => {
-  try {
-    const electionId = req.params.id;
-    console.log('Fetching results for election:', electionId);
-
-    // Validate ObjectId
-    if (!mongoose.Types.ObjectId.isValid(electionId)) {
-      return res.status(400).json({ message: 'Invalid election ID format' });
-    }
-
-    // Find election
-    const election = await Election.findById(electionId);
-    if (!election) {
-      return res.status(404).json({ message: 'Election not found' });
-    }
-
-    // Check if election is completed
-    const now = new Date();
-    const isCompleted = now > election.endDate;
-    
-    if (!isCompleted) {
-      return res.status(403).json({ 
-        message: 'Results are not available until the election is complete',
-        endDate: election.endDate
-      });
-    }
-
-    // For testing: Generate mock results if no real votes exist
-    const totalVotes = await Vote.countDocuments({ election: electionId });
-    let candidateVotes;
-
-    if (totalVotes === 0) {
-      // Generate mock votes for testing
-      console.log('Generating mock results for testing');
-      const mockVotes = election.candidates.map((candidate, index) => ({
-        _id: candidate._id,
-        count: Math.floor(Math.random() * 1000) + 100 // Random votes between 100-1100
-      }));
-      
-      // Sort by vote count
-      mockVotes.sort((a, b) => b.count - a.count);
-      candidateVotes = mockVotes;
-    } else {
-      // Get real votes
-      candidateVotes = await Vote.aggregate([
-        { $match: { election: mongoose.Types.ObjectId(electionId) } },
-        { $group: { _id: '$candidate', count: { $sum: 1 } } },
-        { $sort: { count: -1 } }
-      ]);
-    }
-
-    // Calculate total votes (real or mock)
-    const totalVoteCount = candidateVotes.reduce((sum, vote) => sum + vote.count, 0);
-
-    // Format results with candidate details
-    const formattedResults = candidateVotes.map(result => {
-      const candidate = election.candidates.find(
-        c => c._id.toString() === result._id.toString()
-      );
-      
-      return {
-        candidate: candidate ? {
-          id: candidate._id,
-          name: candidate.name,
-          party: candidate.party,
-          bio: candidate.bio
-        } : { 
-          id: result._id, 
-          name: 'Unknown Candidate', 
-          party: 'Unknown',
-          bio: 'No information available'
-        },
-        votes: result.count,
-        percentage: totalVoteCount > 0 ? (result.count / totalVoteCount) * 100 : 0
-      };
-    });
-
-    // Get winner(s)
-    const maxVotes = Math.max(...formattedResults.map(r => r.votes));
-    const winners = formattedResults.filter(r => r.votes === maxVotes);
-
-    const response = {
-      electionId: election._id,
-      title: election.title,
-      description: election.description,
-      totalVotes: totalVoteCount,
-      results: formattedResults,
-      winners: winners.map(w => w.candidate),
-      isTie: winners.length > 1,
-      endDate: election.endDate,
-      lastUpdated: new Date(),
-      isMockData: totalVotes === 0 // Flag to indicate if results are mock data
-    };
-
-    console.log('Sending results:', response);
-    res.json(response);
-  } catch (error) {
-    console.error('Get results error:', error);
-    res.status(500).json({ 
-      message: 'Server error fetching results',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
@@ -454,75 +335,6 @@ router.get('/:id/vote-status', authenticateToken, async (req, res) => {
   }
 });
 
-// Get election statistics
-router.get('/:id/stats', authenticateToken, async (req, res) => {
-  try {
-    const electionId = req.params.id;
-    const userId = req.user.id;
-
-    // Validate ObjectId
-    if (!mongoose.Types.ObjectId.isValid(electionId)) {
-      return res.status(400).json({ message: 'Invalid election ID format' });
-    }
-
-    // Find election
-    const election = await Election.findById(electionId);
-    if (!election) {
-      return res.status(404).json({ message: 'Election not found' });
-    }
-
-    // Get total votes
-    const totalVotes = await Vote.countDocuments({ election: electionId });
-
-    // Get votes per candidate
-    const candidateVotes = await Vote.aggregate([
-      { $match: { election: mongoose.Types.ObjectId(electionId) } },
-      { $group: { _id: '$candidate', count: { $sum: 1 } } }
-    ]);
-
-    // Check if user has voted
-    const userVote = await Vote.findOne({
-      election: electionId,
-      voter: userId
-    });
-
-    // Format candidate votes with candidate details
-    const formattedCandidateVotes = candidateVotes.map(vote => {
-      const candidate = election.candidates.find(
-        c => c._id.toString() === vote._id.toString()
-      );
-      
-      return {
-        candidate: candidate ? {
-          id: candidate._id,
-          name: candidate.name,
-          party: candidate.party
-        } : { id: vote._id, name: 'Unknown Candidate', party: 'Unknown' },
-        votes: vote.count,
-        percentage: totalVotes > 0 ? (vote.count / totalVotes) * 100 : 0
-      };
-    });
-
-    res.json({
-      electionId: election._id,
-      title: election.title,
-      totalVotes,
-      hasVoted: !!userVote,
-      userVoteId: userVote?._id,
-      candidateVotes: formattedCandidateVotes,
-      status: election.status,
-      startDate: election.startDate,
-      endDate: election.endDate
-    });
-  } catch (error) {
-    console.error('Get election stats error:', error);
-    res.status(500).json({ 
-      message: 'Server error fetching election statistics',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
 // Delete election
 router.delete('/:id', authenticateToken, isAdmin, async (req, res) => {
   try {
@@ -550,7 +362,7 @@ router.delete('/:id', authenticateToken, isAdmin, async (req, res) => {
       });
     }
 
-    // Check if election is active
+    // Check if election is active or completed
     const now = new Date();
     if (now >= election.startDate && now <= election.endDate) {
       console.log('Attempted to delete active election:', {
@@ -562,6 +374,18 @@ router.delete('/:id', authenticateToken, isAdmin, async (req, res) => {
       return res.status(400).json({ 
         message: 'Cannot delete an active election',
         startDate: election.startDate,
+        endDate: election.endDate
+      });
+    }
+
+    if (now > election.endDate) {
+      console.log('Attempted to delete completed election:', {
+        electionId,
+        endDate: election.endDate,
+        currentTime: now
+      });
+      return res.status(400).json({ 
+        message: 'Cannot delete a completed election',
         endDate: election.endDate
       });
     }
@@ -594,6 +418,212 @@ router.delete('/:id', authenticateToken, isAdmin, async (req, res) => {
     
     res.status(500).json({ 
       message: 'Server error deleting election',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// Get election results (only for completed elections)
+router.get('/:id/results', async (req, res) => {
+  try {
+    const electionId = req.params.id;
+    console.log('Fetching results for election:', electionId);
+
+    // Validate ObjectId
+    if (!mongoose.Types.ObjectId.isValid(electionId)) {
+      return res.status(400).json({ message: 'Invalid election ID format' });
+    }
+
+    // Find election
+    const election = await Election.findById(electionId);
+    if (!election) {
+      return res.status(404).json({ message: 'Election not found' });
+    }
+
+    // Check if election is completed
+    const now = new Date();
+    const isCompleted = now > election.endDate;
+    
+    if (!isCompleted) {
+      return res.status(403).json({ 
+        message: 'Results are not available until the election is complete',
+        endDate: election.endDate
+      });
+    }
+
+    // Get vote counts for each candidate
+    const votes = await Vote.find({ election: electionId });
+    const totalVotes = votes.length;
+
+    // Create a map of candidate votes
+    const voteMap = new Map();
+    votes.forEach(vote => {
+      const count = voteMap.get(vote.candidate.toString()) || 0;
+      voteMap.set(vote.candidate.toString(), count + 1);
+    });
+
+    // Format results with candidate details
+    const results = election.candidates.map(candidate => {
+      const votes = voteMap.get(candidate._id.toString()) || 0;
+      const percentage = totalVotes > 0 ? (votes / totalVotes) * 100 : 0;
+
+      return {
+        candidate: {
+          id: candidate._id,
+          name: candidate.name,
+          party: candidate.party,
+          bio: candidate.bio
+        },
+        votes,
+        percentage
+      };
+    });
+
+    // Sort results by votes in descending order
+    results.sort((a, b) => b.votes - a.votes);
+
+    // Get winner(s)
+    const maxVotes = Math.max(...results.map(r => r.votes));
+    const winners = results
+      .filter(r => r.votes === maxVotes)
+      .map(r => r.candidate);
+
+    const response = {
+      electionId: election._id,
+      title: election.title,
+      description: election.description,
+      totalVotes,
+      results,
+      winners,
+      isTie: winners.length > 1,
+      endDate: election.endDate,
+      lastUpdated: new Date()
+    };
+
+    console.log('Sending results:', response);
+    res.json(response);
+  } catch (error) {
+    console.error('Get results error:', error);
+    res.status(500).json({ 
+      message: 'Server error fetching results',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// Update election
+router.put('/:id', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const electionId = req.params.id;
+    const { title, description, startDate, endDate, candidates } = req.body;
+    
+    console.log('Update request received for election:', {
+      electionId,
+      title,
+      startDate,
+      endDate,
+      candidatesCount: candidates?.length
+    });
+
+    // Validate ObjectId
+    if (!mongoose.Types.ObjectId.isValid(electionId)) {
+      return res.status(400).json({ message: 'Invalid election ID format' });
+    }
+
+    // Find election
+    const election = await Election.findById(electionId);
+    if (!election) {
+      return res.status(404).json({ message: 'Election not found' });
+    }
+
+    // Check if election is completed or active
+    const now = new Date();
+    if (now > election.endDate) {
+      return res.status(400).json({ 
+        message: 'Cannot update a completed election',
+        endDate: election.endDate
+      });
+    }
+
+    if (now >= election.startDate && now <= election.endDate) {
+      return res.status(400).json({ 
+        message: 'Cannot update an active election',
+        startDate: election.startDate,
+        endDate: election.endDate
+      });
+    }
+
+    // Validate dates
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return res.status(400).json({ message: 'Invalid date format' });
+    }
+    
+    if (end <= start) {
+      return res.status(400).json({ message: 'End date must be after start date' });
+    }
+
+    // Validate candidates if provided
+    if (candidates) {
+      if (!Array.isArray(candidates) || candidates.length < 2) {
+        return res.status(400).json({ message: 'At least two candidates are required' });
+      }
+
+      // Validate each candidate
+      for (const candidate of candidates) {
+        if (!candidate.name || !candidate.party || !candidate.bio) {
+          return res.status(400).json({ 
+            message: 'Each candidate must have name, party, and bio',
+            invalidCandidate: candidate
+          });
+        }
+      }
+    }
+
+    // Update election
+    const updateData = {
+      title,
+      description,
+      startDate: start,
+      endDate: end
+    };
+
+    if (candidates) {
+      updateData.candidates = candidates.map(candidate => ({
+        name: candidate.name,
+        party: candidate.party,
+        bio: candidate.bio,
+        _id: candidate._id || new mongoose.Types.ObjectId()
+      }));
+    }
+
+    const updatedElection = await Election.findByIdAndUpdate(
+      electionId,
+      { $set: updateData },
+      { new: true }
+    );
+
+    console.log('Election updated successfully:', {
+      id: updatedElection._id,
+      title: updatedElection.title,
+      candidatesCount: updatedElection.candidates.length
+    });
+
+    res.json(updatedElection);
+  } catch (error) {
+    console.error('Update election error:', error);
+    
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ 
+        message: 'Validation error',
+        errors: Object.values(error.errors).map(err => err.message)
+      });
+    }
+    
+    res.status(500).json({ 
+      message: 'Server error updating election',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }

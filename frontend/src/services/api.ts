@@ -1,6 +1,8 @@
 import axios from 'axios';
 
 const API_URL = 'http://localhost:5000/api';
+// const API_URL = 'https://e-ballot-voting-system-1.onrender.com';
+
 
 // Create axios instance
 const api = axios.create({
@@ -20,6 +22,21 @@ api.interceptors.request.use(
     return config;
   },
   (error) => Promise.reject(error)
+);
+
+// Add response interceptor for error handling
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    // Handle unauthorized errors
+    if (error.response?.status === 401) {
+      // Clear local storage and redirect to login
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
 );
 
 // Auth services
@@ -54,11 +71,53 @@ export const authService = {
   getProfile: async () => {
     const response = await api.get('/auth/profile');
     return response.data;
+  },
+
+  updateProfile: async (userData: any) => {
+    const response = await api.put('/auth/profile', userData);
+    return response.data;
+  },
+
+  // Admin: Get all registered voters
+  getAllVoters: async (ageRange?: string) => {
+    const response = await api.get('/auth/voters', {
+      params: { ageRange }
+    });
+    return response.data;
+  },
+
+  // Deactivate own profile
+  deactivateProfile: async () => {
+    try {
+      const response = await api.post('/auth/deactivate');
+      if (!response.data) {
+        throw new Error('No response from server');
+      }
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.data) {
+        throw error.response.data;
+      }
+      throw error;
+    }
+  },
+
+  // Admin: Deactivate voter
+  deactivateVoter: async (voterId: string) => {
+    const response = await api.post(`/auth/voters/${voterId}/deactivate`);
+    return response.data;
   }
 };
 
+export interface Candidate {
+  _id?: string;
+  name: string;
+  party: string;
+  bio: string;
+}
+
 // Election services
-const electionService = {
+export const electionService = {
   getElectionDetails: async (electionId: string) => {
     const response = await api.get(`/elections/${electionId}`);
     return response.data;
@@ -93,12 +152,23 @@ const electionService = {
 
   // Admin endpoints
   createElection: async (electionData: any) => {
-    const response = await api.post('/elections', electionData);
-    return response.data;
+    try {
+      const response = await api.post('/elections', electionData);
+      return response.data;
+    } catch (error: any) {
+      console.error('Error creating election:', error.response?.data || error);
+      throw error;
+    }
   },
 
-  updateElection: async (electionId: string, electionData: any) => {
-    const response = await api.put(`/elections/${electionId}`, electionData);
+  updateElection: async (electionId: string, data: {
+    title: string;
+    description: string;
+    startDate: string;
+    endDate: string;
+    candidates?: Candidate[];
+  }) => {
+    const response = await api.put(`/elections/${electionId}`, data);
     return response.data;
   },
 
@@ -113,5 +183,4 @@ const electionService = {
   }
 };
 
-export { electionService };
 export default api;

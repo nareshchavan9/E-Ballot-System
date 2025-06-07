@@ -28,7 +28,11 @@ const formSchema = z.object({
     party: z.string().min(2, "Party must be at least 2 characters"),
     bio: z.string().min(10, "Bio must be at least 10 characters")
   })).min(2, "At least 2 candidates are required")
-}).refine(data => new Date(data.startDate) < new Date(data.endDate), {
+}).refine(data => {
+  const start = new Date(data.startDate);
+  const end = new Date(data.endDate);
+  return start < end;
+}, {
   message: "End date must be after start date",
   path: ["endDate"]
 });
@@ -146,7 +150,7 @@ const CreateElection = () => {
                 )}
               />
               
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="startDate"

@@ -4,24 +4,48 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LogOut, User, Mail, Phone, Shield } from "lucide-react";
+import { LogOut, User, Mail, Phone, Shield, Calendar } from "lucide-react";
 import { authService } from "@/services/api";
 import { toast } from "@/hooks/use-toast";
+import { z } from "zod";
+
+const profileSchema = z.object({
+  fullName: z.string().min(3, "Full name must be at least 3 characters"),
+  email: z.string().email("Invalid email address"),
+  phone: z.string()
+    .regex(/^\+?[1-9]\d{9,14}$/, "Invalid phone number")
+    .optional()
+    .or(z.literal("")),
+  age: z.string()
+    .refine((val) => !val || !isNaN(parseInt(val)), "Age must be a number")
+    .refine((val) => !val || parseInt(val) >= 18, "You must be at least 18 years old")
+    .refine((val) => !val || parseInt(val) <= 120, "Please enter a valid age")
+    .optional()
+    .or(z.literal("")),
+  voterID: z.string().min(6, "Voter ID must be at least 6 characters"),
+});
 
 const Profile = () => {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
+  const [showDeactivateConfirm, setShowDeactivateConfirm] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [profile, setProfile] = useState({
-    name: "",
+    fullName: "",
     email: "",
     phone: "",
+    age: "",
     role: "",
-    voterID: ""
+    voterID: "",
+    isActive: true
   });
   const [formData, setFormData] = useState({
-    name: "",
-    phone: ""
+    fullName: "",
+    email: "",
+    phone: "",
+    age: "",
+    voterID: ""
   });
 
   useEffect(() => {
@@ -32,22 +56,21 @@ const Profile = () => {
     try {
       setIsLoading(true);
       const data = await authService.getProfile();
-      console.log('Profile data:', data);
-      setProfile({
-        name: data.fullName || data.name || "",
+      const profileData = {
+        fullName: data.fullName || "",
         email: data.email || "",
         phone: data.phone || "",
+        age: data.age?.toString() || "",
         role: data.role || "",
-        voterID: data.voterID || ""
-      });
-      setFormData({
-        name: data.fullName || data.name || "",
-        phone: data.phone || ""
-      });
+        voterID: data.voterID || "",
+        isActive: data.isActive || true
+      };
+      setProfile(profileData);
+      setFormData(profileData);
     } catch (error: any) {
       toast({
         title: "Error",
-        description: "Failed to load profile",
+        description: error.response?.data?.message || "Failed to load profile",
         variant: "destructive",
       });
     } finally {
@@ -57,26 +80,75 @@ const Profile = () => {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
+    
+    // Special handling for age input
+    if (name === 'age') {
+      // Only allow numbers and empty string
+      if (value === '' || /^\d+$/.test(value)) {
+        setFormData(prev => ({
+          ...prev,
+          [name]: value
+        }));
+      }
+      return;
+    }
+
     setFormData(prev => ({
       ...prev,
       [name]: value
     }));
+
+    // Clear validation error when user starts typing
+    if (validationErrors[name]) {
+      setValidationErrors(prev => ({
+        ...prev,
+        [name]: ""
+      }));
+    }
+  };
+
+  const validateForm = () => {
+    try {
+      profileSchema.parse(formData);
+      setValidationErrors({});
+      return true;
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const errors: Record<string, string> = {};
+        error.errors.forEach((err) => {
+          if (err.path[0]) {
+            errors[err.path[0].toString()] = err.message;
+          }
+        });
+        setValidationErrors(errors);
+      }
+      return false;
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validateForm()) return;
+
     try {
-      await authService.updateProfile(formData);
+      const updatedData = {
+        ...formData,
+        age: formData.age ? parseInt(formData.age) : undefined,
+        phone: formData.phone || undefined
+      };
+      
+      await authService.updateProfile(updatedData);
+      await fetchProfile(); // Refresh the profile data
+      
       toast({
         title: "Success",
         description: "Profile updated successfully",
       });
       setIsEditing(false);
-      fetchProfile();
     } catch (error: any) {
       toast({
         title: "Error",
-        description: error.message || "Failed to update profile",
+        description: error.response?.data?.message || "Failed to update profile",
         variant: "destructive",
       });
     }
@@ -85,6 +157,39 @@ const Profile = () => {
   const handleLogout = () => {
     authService.logout();
     navigate("/");
+  };
+
+  const handleDeactivateAccount = async () => {
+    try {
+      setIsLoading(true);
+      const response = await authService.deactivateProfile();
+      
+      if (response.success) {
+        toast({
+          title: "Success",
+          description: "Your account has been deleted",
+          variant: "default",
+        });
+        
+        // Clear all user data from localStorage
+        authService.logout();
+        
+        // Redirect to home page
+        navigate("/");
+      } else {
+        throw new Error(response.message || 'Failed to delete account');
+      }
+    } catch (error: any) {
+      console.error('Delete account error:', error);
+      toast({
+        title: "Error",
+        description: error.response?.data?.message || error.message || "Failed to delete account",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+      setShowDeactivateConfirm(false);
+    }
   };
 
   if (isLoading) {
@@ -129,14 +234,31 @@ const Profile = () => {
               {isEditing ? (
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div>
-                    <Label htmlFor="name">Full Name</Label>
+                    <Label htmlFor="fullName">Full Name</Label>
                     <Input
-                      id="name"
-                      name="name"
-                      value={formData.name}
+                      id="fullName"
+                      name="fullName"
+                      value={formData.fullName}
                       onChange={handleInputChange}
-                      required
+                      className={validationErrors.fullName ? "border-red-500" : ""}
                     />
+                    {validationErrors.fullName && (
+                      <p className="text-sm text-red-500 mt-1">{validationErrors.fullName}</p>
+                    )}
+                  </div>
+                  <div>
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                      id="email"
+                      name="email"
+                      type="email"
+                      value={formData.email}
+                      onChange={handleInputChange}
+                      className={validationErrors.email ? "border-red-500" : ""}
+                    />
+                    {validationErrors.email && (
+                      <p className="text-sm text-red-500 mt-1">{validationErrors.email}</p>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor="phone">Phone Number</Label>
@@ -145,14 +267,51 @@ const Profile = () => {
                       name="phone"
                       value={formData.phone}
                       onChange={handleInputChange}
-                      required
+                      placeholder="+1234567890"
+                      className={validationErrors.phone ? "border-red-500" : ""}
                     />
+                    {validationErrors.phone && (
+                      <p className="text-sm text-red-500 mt-1">{validationErrors.phone}</p>
+                    )}
                   </div>
-                  <div className="flex justify-end gap-4">
+                  <div>
+                    <Label htmlFor="age">Age</Label>
+                    <Input
+                      id="age"
+                      name="age"
+                      type="number"
+                      min="18"
+                      max="120"
+                      value={formData.age}
+                      onChange={handleInputChange}
+                      className={validationErrors.age ? "border-red-500" : ""}
+                    />
+                    {validationErrors.age && (
+                      <p className="text-sm text-red-500 mt-1">{validationErrors.age}</p>
+                    )}
+                  </div>
+                  <div>
+                    <Label htmlFor="voterID">Voter ID</Label>
+                    <Input
+                      id="voterID"
+                      name="voterID"
+                      value={formData.voterID}
+                      onChange={handleInputChange}
+                      className={validationErrors.voterID ? "border-red-500" : ""}
+                    />
+                    {validationErrors.voterID && (
+                      <p className="text-sm text-red-500 mt-1">{validationErrors.voterID}</p>
+                    )}
+                  </div>
+                  <div className="flex justify-end gap-4 pt-4">
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={() => setIsEditing(false)}
+                      onClick={() => {
+                        setIsEditing(false);
+                        setValidationErrors({});
+                        setFormData(profile);
+                      }}
                     >
                       Cancel
                     </Button>
@@ -166,7 +325,7 @@ const Profile = () => {
                       <User className="h-8 w-8 text-blue-600" />
                     </div>
                     <div>
-                      <h3 className="text-xl font-semibold">{profile.name}</h3>
+                      <h3 className="text-xl font-semibold">{profile.fullName}</h3>
                       <p className="text-gray-500">{profile.role}</p>
                     </div>
                   </div>
@@ -187,21 +346,66 @@ const Profile = () => {
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
+                      <Calendar className="h-5 w-5 text-gray-400" />
+                      <div>
+                        <p className="text-sm text-gray-500">Age</p>
+                        <p>{profile.age || "Not provided"}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
                       <Shield className="h-5 w-5 text-gray-400" />
                       <div>
                         <p className="text-sm text-gray-500">Voter ID</p>
-                        <p>{profile.voterID || "Not available"}</p>
+                        <p>{profile.voterID}</p>
                       </div>
                     </div>
                   </div>
 
-                  <Button onClick={() => setIsEditing(true)}>Edit Profile</Button>
+                  <CardFooter className="flex flex-col gap-4">
+                    {!isEditing && (
+                      <>
+                        <Button onClick={() => setIsEditing(true)}>Edit Profile</Button>
+                        <Button 
+                          variant="destructive" 
+                          onClick={() => setShowDeactivateConfirm(true)}
+                        >
+                          Delete Account
+                        </Button>
+                      </>
+                    )}
+                  </CardFooter>
                 </div>
               )}
             </CardContent>
           </Card>
         </div>
       </main>
+
+      {/* Deactivate Confirmation Dialog */}
+      {showDeactivateConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-lg font-semibold mb-4">Delete Account</h3>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to deactivate your account? You will no longer be able to login or participate in elections.
+            </p>
+            <div className="flex justify-end gap-4">
+              <Button
+                variant="outline"
+                onClick={() => setShowDeactivateConfirm(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleDeactivateAccount}
+              >
+                Deactivate Account
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

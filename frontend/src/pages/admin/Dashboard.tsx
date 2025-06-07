@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Calendar, LogOut, User, Plus, BarChart2, Trash2 } from "lucide-react";
-import { electionService } from "@/services/api";
+import { electionService, authService } from "@/services/api";
 import { toast } from "@/hooks/use-toast";
 import {
   Dialog,
@@ -68,21 +68,39 @@ const ElectionCard = ({ election, onDelete }: { election: Election; onDelete: (i
           </div>
         </div>
       </CardContent>
-      <CardFooter className="flex-none mt-auto pt-4">
+      <CardFooter className="flex-none mt-auto pt-4 flex flex-col gap-2">
         <div className="flex gap-2 w-full">
+          {election.status === "active" && (
+            <Button 
+              variant="outline" 
+              className="flex-1"
+              onClick={() => navigate(`/admin/elections/${election._id}/edit`)}
+            >
+              <BarChart2 className="h-4 w-4 mr-2" />
+              Edit
+            </Button>
+          )}
+          {election.status === "completed" && (
+            <Button 
+              variant="outline" 
+              className="flex-1"
+              onClick={() => navigate(`/elections/${election._id}`)}
+            >
+              <BarChart2 className="h-4 w-4 mr-2" />
+              View Results
+            </Button>
+          )}
+        </div>
+        {election.status === "upcoming" && (
           <Button 
-            className="flex-1 bg-sky-300 hover:bg-sky-400 text-white"
-            onClick={() => navigate(`/admin/elections/${election._id}/edit`)}
-          >
-            Edit
-          </Button>
-          <Button 
-            variant="destructive"
+            variant="destructive" 
+            className="w-full"
             onClick={() => onDelete(election._id)}
           >
-            <Trash2 className="h-4 w-4" />
+            <Trash2 className="h-4 w-4 mr-2" />
+            Delete
           </Button>
-        </div>
+        )}
       </CardFooter>
     </Card>
   );
@@ -158,13 +176,6 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleLogout = () => {
-    // Clear admin authentication state
-    localStorage.removeItem('adminToken');
-    localStorage.removeItem('adminUser');
-    navigate("/");
-  };
-
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -183,11 +194,14 @@ const AdminDashboard = () => {
           <div className="flex justify-between items-center">
             <h1 className="text-2xl font-bold text-blue-600">Admin Dashboard</h1>
             <div className="flex items-center gap-4">
-              <Button variant="ghost" size="sm" onClick={() => navigate("/admin/profile")}>
+              <Button variant="ghost" size="sm" onClick={() => navigate("/profile")}>
                 <User className="h-4 w-4 mr-2" />
                 Profile
               </Button>
-              <Button variant="outline" size="sm" onClick={handleLogout}>
+              <Button variant="outline" size="sm" onClick={() => {
+                authService.logout();
+                navigate("/login");
+              }}>
                 <LogOut className="h-4 w-4 mr-2" />
                 Log out
               </Button>
@@ -197,6 +211,20 @@ const AdminDashboard = () => {
       </header>
 
       <main className="container mx-auto px-4 md:px-6 py-8">
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+          <div className="space-x-4">
+            <Button onClick={() => navigate("/admin/elections/new")}>
+              <Plus className="h-4 w-4 mr-2" />
+              Create New Election
+            </Button>
+            <Button onClick={() => navigate("/admin/voters")} variant="secondary">
+              <User className="h-4 w-4 mr-2" />
+              View Registered Voters
+            </Button>
+          </div>
+        </div>
+
         <div className="mb-8">
           <h2 className="text-2xl font-semibold mb-2">Welcome, Admin</h2>
           <p className="text-gray-600">Manage your elections and view results.</p>

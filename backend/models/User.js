@@ -1,4 +1,3 @@
-
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
@@ -25,6 +24,16 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  age: {
+    type: Number,
+    min: 18,
+    max: 120
+  },
+  phone: {
+    type: String,
+    trim: true,
+    match: [/^\+?[1-9]\d{9,14}$/, 'Please enter a valid phone number']
+  },
   isVerified: {
     type: Boolean,
     default: false
@@ -34,10 +43,16 @@ const userSchema = new mongoose.Schema({
     enum: ['voter', 'admin'],
     default: 'voter'
   },
+  isActive: {
+    type: Boolean,
+    default: true
+  },
   createdAt: {
     type: Date,
     default: Date.now
   }
+}, {
+  timestamps: true
 });
 
 // Password hashing middleware

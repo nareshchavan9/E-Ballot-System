@@ -12,6 +12,8 @@ import Profile from "./pages/Profile";
 import ElectionDetails from "./pages/ElectionDetails";
 import AdminDashboard from "./pages/admin/Dashboard";
 import CreateElection from "./pages/admin/CreateElection";
+import EditElection from "./pages/admin/EditElection";
+import VotersList from '@/components/VotersList';
 import { authService } from "./services/api";
 
 const queryClient = new QueryClient();
@@ -85,10 +87,15 @@ const App = () => (
             path="/admin/elections/:id/edit" 
             element={
               <AdminRoute>
-                <div>Edit Election Form (Coming Soon)</div>
+                <EditElection />
               </AdminRoute>
             } 
           />
+          <Route path="/admin/voters" element={
+            <AdminRoute>
+              <VotersList />
+            </AdminRoute>
+          } />
           
           {/* Catch-all route */}
           <Route path="*" element={<NotFound />} />
