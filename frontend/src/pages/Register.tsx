@@ -65,7 +65,7 @@ const Register = () => {
       
       toast({
         title: "Registration successful!",
-        description: "Please check your email to verify your account.",
+        // description: "Please check your email to verify your account.",
       });
       navigate("/login");
     } catch (error: any) {
