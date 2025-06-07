@@ -387,7 +387,7 @@ const Profile = () => {
           <div className="bg-white rounded-lg p-6 max-w-md w-full">
             <h3 className="text-lg font-semibold mb-4">Delete Account</h3>
             <p className="text-gray-600 mb-6">
-              Are you sure you want to deactivate your account? You will no longer be able to login or participate in elections.
+              Are you sure you want to delete your account? You will no longer be able to login or participate in elections.
             </p>
             <div className="flex justify-end gap-4">
               <Button
@@ -400,7 +400,7 @@ const Profile = () => {
                 variant="destructive"
                 onClick={handleDeactivateAccount}
               >
-                Deactivate Account
+                Delete Account
               </Button>
             </div>
           </div>
