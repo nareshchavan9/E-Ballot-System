@@ -1,5 +1,6 @@
 import { Progress } from "@/components/ui/progress";
 import { CheckCircle2, Loader2 } from "lucide-react";
+import { Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const ResultDisplay = ({ 
@@ -34,10 +35,26 @@ const ResultDisplay = ({
   return (
     <div>
       <h2 className="text-xl font-semibold mb-4">Election Results</h2>
-      <p className="text-gray-700 mb-6">
+      <p className="text-gray-700 mb-2">
         Total votes cast: {results.totalVotes}
       </p>
-      
+      {results.winners && results.winners.length > 0 && (
+        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded">
+          <span className="font-semibold text-green-700">Winner{results.isTie ? 's' : ''}: </span>
+          {results.winners.map((winner, idx) => {
+            const winnerResult = results.results.find(r => r.candidate.id === winner.id);
+            return (
+              <span key={winner.id} className="font-bold inline-flex items-center mr-2">
+                <Trophy className="h-5 w-5 text-yellow-500 mr-1" />
+                <span className="text-green-700 mr-1">Winner</span>
+                {winner.name}
+                {winnerResult ? ` (${winnerResult.votes} vote${winnerResult.votes !== 1 ? 's' : ''})` : ''}
+                {idx < results.winners.length - 1 ? ',' : ''}
+              </span>
+            );
+          })}
+        </div>
+      )}
       <div className="space-y-6">
         {results.results.map((result, index) => (
           <div key={result.candidate.id} className="space-y-2">
@@ -66,4 +83,4 @@ const ResultDisplay = ({
   );
 };
 
-export default ResultDisplay; 
+export default ResultDisplay;

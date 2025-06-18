@@ -161,14 +161,8 @@ export const electionService = {
     }
   },
 
-  updateElection: async (electionId: string, data: {
-    title: string;
-    description: string;
-    startDate: string;
-    endDate: string;
-    candidates?: Candidate[];
-  }) => {
-    const response = await api.put(`/elections/${electionId}`, data);
+  updateElection: async (id: string, electionData: any) => {
+    const response = await api.put(`/elections/${id}`, electionData);
     return response.data;
   },
 
@@ -179,6 +173,12 @@ export const electionService = {
 
   getElectionStats: async (electionId: string) => {
     const response = await api.get(`/elections/${electionId}/stats`);
+    return response.data;
+  },
+
+  // Get upcoming elections
+  getUpcomingElections: async () => {
+    const response = await api.get('/elections?status=upcoming');
     return response.data;
   }
 };

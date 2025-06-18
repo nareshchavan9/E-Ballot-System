@@ -70,6 +70,26 @@ const ElectionCard = ({ election, onDelete }: { election: Election; onDelete: (i
       </CardContent>
       <CardFooter className="flex-none mt-auto pt-4 flex flex-col gap-2">
         <div className="flex gap-2 w-full">
+          {election.status === "upcoming" && (
+            <>
+              <Button 
+                variant="outline" 
+                className="flex-1"
+                onClick={() => navigate(`/admin/elections/${election._id}/edit`)}
+              >
+                <BarChart2 className="h-4 w-4 mr-2" />
+                Edit
+              </Button>
+              <Button 
+                variant="destructive" 
+                className="flex-1"
+                onClick={() => onDelete(election._id)}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete
+              </Button>
+            </>
+          )}
           {election.status === "active" && (
             <Button 
               variant="outline" 
@@ -91,16 +111,6 @@ const ElectionCard = ({ election, onDelete }: { election: Election; onDelete: (i
             </Button>
           )}
         </div>
-        {election.status === "upcoming" && (
-          <Button 
-            variant="destructive" 
-            className="w-full"
-            onClick={() => onDelete(election._id)}
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            Delete
-          </Button>
-        )}
       </CardFooter>
     </Card>
   );
@@ -297,4 +307,4 @@ const AdminDashboard = () => {
   );
 };
 
-export default AdminDashboard; 
+export default AdminDashboard;

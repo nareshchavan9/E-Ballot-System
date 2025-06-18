@@ -511,121 +511,60 @@ router.get('/:id/results', async (req, res) => {
   }
 });
 
-// Update election
+// Edit upcoming election
 router.put('/:id', authenticateToken, isAdmin, async (req, res) => {
   try {
-    const electionId = req.params.id;
-    const { title, description, startDate, endDate, candidates } = req.body;
-    
-    console.log('Update request received for election:', {
-      electionId,
-      title,
-      startDate,
-      endDate,
-      candidatesCount: candidates?.length
-    });
-
-    // Validate ObjectId
-    if (!mongoose.Types.ObjectId.isValid(electionId)) {
-      return res.status(400).json({ message: 'Invalid election ID format' });
-    }
-
-    // Find election
-    const election = await Election.findById(electionId);
+    const election = await Election.findById(req.params.id);
     if (!election) {
       return res.status(404).json({ message: 'Election not found' });
     }
 
-    // Check if election is completed or active
-    const now = new Date();
-    if (now > election.endDate) {
-      return res.status(400).json({ 
-        message: 'Cannot update a completed election',
-        endDate: election.endDate
-      });
-    }
-
-    if (now >= election.startDate && now <= election.endDate) {
-      return res.status(400).json({ 
-        message: 'Cannot update an active election',
-        startDate: election.startDate,
-        endDate: election.endDate
-      });
-    }
-
-    // Validate dates
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-      return res.status(400).json({ message: 'Invalid date format' });
-    }
-    
-    if (end <= start) {
-      return res.status(400).json({ message: 'End date must be after start date' });
-    }
-
-    // Validate candidates if provided
-    if (candidates) {
-      if (!Array.isArray(candidates) || candidates.length < 2) {
-        return res.status(400).json({ message: 'At least two candidates are required' });
-      }
-
-      // Validate each candidate
-      for (const candidate of candidates) {
-        if (!candidate.name || !candidate.party || !candidate.bio) {
-          return res.status(400).json({ 
-            message: 'Each candidate must have name, party, and bio',
-            invalidCandidate: candidate
-          });
-        }
-      }
-    }
-
-    // Update election
-    const updateData = {
+    const {
       title,
       description,
-      startDate: start,
-      endDate: end
-    };
+      startDate,
+      endDate,
+      candidates
+    } = req.body;
 
-    if (candidates) {
-      updateData.candidates = candidates.map(candidate => ({
-        name: candidate.name,
-        party: candidate.party,
-        bio: candidate.bio,
-        _id: candidate._id || new mongoose.Types.ObjectId()
-      }));
+    const now = new Date();
+    const newStartDate = new Date(startDate);
+    const newEndDate = new Date(endDate);
+
+    if (election.status === 'upcoming') {
+      // Validate dates for upcoming
+      if (newStartDate <= now) {
+        return res.status(400).json({ message: 'Start date must be in the future' });
+      }
+      if (newEndDate <= newStartDate) {
+        return res.status(400).json({ message: 'End date must be after start date' });
+      }
+      election.startDate = startDate;
+      election.title = title;
+      election.description = description;
+      election.endDate = endDate;
+      if (candidates && Array.isArray(candidates)) {
+        election.candidates = candidates;
+      }
+    } else if (election.status === 'active') {
+      // For active elections, only allow extending endDate
+      if (!endDate) {
+        return res.status(400).json({ message: 'End date is required' });
+      }
+      const currentEndDate = new Date(election.endDate);
+      if (newEndDate <= currentEndDate) {
+        return res.status(400).json({ message: 'End date can only be extended' });
+      }
+      election.endDate = endDate;
+    } else {
+      return res.status(400).json({ message: 'Only upcoming or active elections can be edited' });
     }
 
-    const updatedElection = await Election.findByIdAndUpdate(
-      electionId,
-      { $set: updateData },
-      { new: true }
-    );
-
-    console.log('Election updated successfully:', {
-      id: updatedElection._id,
-      title: updatedElection.title,
-      candidatesCount: updatedElection.candidates.length
-    });
-
-    res.json(updatedElection);
+    await election.save();
+    res.json(election);
   } catch (error) {
-    console.error('Update election error:', error);
-    
-    if (error.name === 'ValidationError') {
-      return res.status(400).json({ 
-        message: 'Validation error',
-        errors: Object.values(error.errors).map(err => err.message)
-      });
-    }
-    
-    res.status(500).json({ 
-      message: 'Server error updating election',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+    console.error('Edit election error:', error);
+    res.status(500).json({ message: 'Server error updating election' });
   }
 });
 

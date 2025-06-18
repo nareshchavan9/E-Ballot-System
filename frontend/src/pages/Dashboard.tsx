@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, LogOut, User, CheckCircle2, Vote } from "lucide-react";
+import { Calendar, LogOut, User, CheckCircle2, Vote, BarChart2 } from "lucide-react";
 import { electionService } from "@/services/api";
 import { toast } from "@/hooks/use-toast";
 
@@ -112,7 +112,14 @@ const ElectionCard = ({ election }: { election: Election }) => {
           onClick={handleButtonClick}
           variant={election.hasVoted ? "outline" : "default"}
         >
-          {getButtonText()}
+          {election.status === "completed" ? (
+            <>
+              <BarChart2 className="h-4 w-4 mr-2" />
+              View Results
+            </>
+          ) : (
+            getButtonText()
+          )}
         </Button>
       </CardFooter>
     </Card>

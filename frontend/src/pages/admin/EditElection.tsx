@@ -57,6 +57,7 @@ const EditElection = () => {
   });
   const [candidateError, setCandidateError] = useState<string | null>(null);
   const [isUpcoming, setIsUpcoming] = useState(false);
+  const [isActive, setIsActive] = useState(false);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -82,10 +83,12 @@ const EditElection = () => {
           .toISOString()
           .split('T')[0];
         
-        // Check if election is upcoming
+        // Check if election is upcoming or active
         const now = new Date();
         const isUpcoming = now < new Date(election.startDate);
+        const isActive = now >= new Date(election.startDate) && now <= new Date(election.endDate);
         setIsUpcoming(isUpcoming);
+        setIsActive(isActive);
 
         form.reset({
           title: election.title,
@@ -143,7 +146,27 @@ const EditElection = () => {
 
   const onSubmit = async (data: FormValues) => {
     if (!id) return;
-    
+    if (isActive) {
+      // Only send endDate for active elections
+      try {
+        setIsSubmitting(true);
+        await electionService.updateElection(id, { endDate: data.endDate });
+        toast({
+          title: "Success",
+          description: "Election end date extended successfully",
+        });
+        navigate('/admin/dashboard');
+      } catch (error: any) {
+        toast({
+          title: "Error",
+          description: error.response?.data?.message || "Failed to update election",
+          variant: "destructive",
+        });
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
     if (candidates.length < 2) {
       toast({
         title: "Error",
@@ -217,13 +240,12 @@ const EditElection = () => {
                   <FormItem>
                     <FormLabel>Title</FormLabel>
                     <FormControl>
-                      <Input placeholder="Enter election title" {...field} />
+                      <Input placeholder="Enter election title" {...field} disabled={isActive} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              
               <FormField
                 control={form.control}
                 name="description"
@@ -235,13 +257,13 @@ const EditElection = () => {
                         placeholder="Enter election description" 
                         className="min-h-[100px]"
                         {...field} 
+                        disabled={isActive}
                       />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FormField
                   control={form.control}
@@ -250,13 +272,12 @@ const EditElection = () => {
                     <FormItem>
                       <FormLabel>Start Date</FormLabel>
                       <FormControl>
-                        <Input type="date" {...field} />
+                        <Input type="date" {...field} disabled={!isUpcoming} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                
                 <FormField
                   control={form.control}
                   name="endDate"
@@ -374,4 +395,4 @@ const EditElection = () => {
   );
 };
 
-export default EditElection; 
+export default EditElection;
