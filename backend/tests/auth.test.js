@@ -13,9 +13,9 @@ describe('Auth API', () => {
     await mongoose.connection.close();
   });
 
-  afterEach(async () => {
-    await User.deleteMany({});
-  });
+  // afterEach(async () => {
+  //   await User.deleteMany({});
+  // });
 
   it('should register a new user', async () => {
     const res = await request(app)
